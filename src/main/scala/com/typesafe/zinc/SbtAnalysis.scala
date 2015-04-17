@@ -167,7 +167,7 @@ object SbtAnalysis {
    * Rebase the output directory of a compile setup.
    */
   def rebaseSetup(setup: CompileSetup, mapper: File => Option[File]): CompileSetup = {
-    val output = Some(setup.output) collect { case single: SingleOutput => single.outputDirectory }
+    val output = Some(setup.output) collect { case single: SingleOutput => single.outputLocation }
     output flatMap mapper map { dir => new CompileSetup(CompileOutput(dir), setup.options, setup.compilerVersion, setup.order, setup.nameHashing) } getOrElse setup
   }
 

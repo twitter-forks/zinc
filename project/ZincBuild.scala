@@ -24,8 +24,10 @@ object ZincBuild extends Build {
       resolveSbtLocally := true,
       resolvers += (if (resolveSbtLocally.value) Resolver.mavenLocal else Opts.resolver.sonatypeSnapshots),
       libraryDependencies ++= Seq(
-        "org.scala-sbt" % "incremental-compiler" % sbtVersion,
+        "org.scala-sbt" % "compile" % sbtVersion,
+        "org.scala-sbt" % "compiler-integration" % sbtVersion,
         "org.scala-sbt" % "compiler-interface" % sbtVersion classifier "src",
+        "org.scala-sbt" % "incremental-compiler" % sbtVersion,
         "com.martiansoftware" % "nailgun-server" % "0.9.1" % "optional"
       ),
       scalacOptions ++= Seq("-feature", "-deprecation", "-Xlint")
