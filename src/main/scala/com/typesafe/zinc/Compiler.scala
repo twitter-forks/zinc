@@ -175,7 +175,6 @@ class Compiler(scalac: AnalyzingCompiler, javac: JavaCompiler, setup: Setup) {
   }
 
   /**
-   * This is run deterministically, no matter what the inputs are.
    * Run a compile. The resulting analysis is also cached in memory.
    */
   def compile(inputs: Inputs, cwd: Option[File], reporter: xsbti.Reporter)(log: Logger): Analysis = {
