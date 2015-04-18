@@ -21,8 +21,8 @@ case class Setup(
   javaHome: Option[File],
   forkJava: Boolean,
   cacheDir: File,
-  printUnits: Boolean,
-  printProgress: Boolean)
+  logUnits: Boolean,
+  logProgress: Boolean)
 
 /**
  * Jar file description for locating jars.
@@ -63,7 +63,7 @@ object Setup {
   def apply(settings: Settings): Setup = {
     val scalaJars = selectScalaJars(settings.scala)
     val (sbtInterface, compilerInterfaceSrc) = selectSbtJars(settings.sbt)
-    setup(scalaJars.compiler, scalaJars.library, scalaJars.extra, sbtInterface, compilerInterfaceSrc, settings.javaHome, settings.forkJava, settings.printUnits, settings.printProgress)
+    setup(scalaJars.compiler, scalaJars.library, scalaJars.extra, sbtInterface, compilerInterfaceSrc, settings.javaHome, settings.forkJava, settings.logUnits, settings.logProgress)
   }
 
   /**
@@ -77,8 +77,8 @@ object Setup {
     compilerInterfaceSrc: File,
     javaHomeDir: Option[File],
     forkJava: Boolean,
-    printUnits: Boolean,
-    printProgress: Boolean): Setup =
+    logUnits: Boolean,
+    logProgress: Boolean): Setup =
   {
     val normalise: File => File = { _.getAbsoluteFile }
     val compilerJar          = normalise(scalaCompiler)
@@ -88,7 +88,7 @@ object Setup {
     val compilerInterfaceJar = normalise(compilerInterfaceSrc)
     val javaHome             = javaHomeDir map normalise
     val cacheDir             = zincCacheDir
-    Setup(compilerJar, libraryJar, extraJars, sbtInterfaceJar, compilerInterfaceJar, javaHome, forkJava, cacheDir, printUnits, printProgress)
+    Setup(compilerJar, libraryJar, extraJars, sbtInterfaceJar, compilerInterfaceJar, javaHome, forkJava, cacheDir, logUnits, logProgress)
   }
 
   /**
@@ -102,8 +102,8 @@ object Setup {
     compilerInterfaceSrc: File,
     javaHome: File,
     forkJava: Boolean,
-    printUnits: Boolean,
-    printProgress: Boolean): Setup =
+    logUnits: Boolean,
+    logProgress: Boolean): Setup =
   setup(
     scalaCompiler,
     scalaLibrary,

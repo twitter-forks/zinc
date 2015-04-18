@@ -7,14 +7,14 @@ import sbt.Logger
  * SimpleCompileProgress implements CompileProgress to add output to zinc scala compilations, but
  * does not implement the capability to cancel compilations via the `advance` method.
  */
-class SimpleCompileProgress (printUnits: Boolean, printProgress: Boolean)(log: Logger) extends CompileProgress {
+class SimpleCompileProgress (logUnits: Boolean, logProgress: Boolean)(log: Logger) extends CompileProgress {
   var lastCurrent: Int = 0  
 
   /** 
    * startUnit Optionally reports to stdout when a phase of compilation has begun for a file.
    */
   def startUnit(phase: String, unitPath: String): Unit =  {
-    if (printUnits) {
+    if (logUnits) {
       log.info(phase + " " + unitPath + "...")
     }
   }
@@ -28,7 +28,7 @@ class SimpleCompileProgress (printUnits: Boolean, printProgress: Boolean)(log: L
    * requests to cancel compilation.
    */
   def advance(current: Int, total: Int): Boolean = {
-    if (printProgress) {
+    if (logProgress) {
       if (current > lastCurrent) {
         log.info("Progress: [" + current + "/" + total + "]")
         lastCurrent = current
