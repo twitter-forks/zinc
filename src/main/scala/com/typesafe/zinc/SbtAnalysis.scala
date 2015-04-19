@@ -5,6 +5,7 @@
 package com.typesafe.zinc
 
 import java.io.File
+import java.net.URL
 import java.nio.charset.Charset
 import sbt.compiler.CompileOutput
 import sbt.inc.{ APIs, Analysis, Relations, SourceInfos, Stamps }
@@ -75,9 +76,10 @@ object SbtAnalysis {
           analysisStore.get match {
             case None => throw new Exception("No analysis cache found at: " + cacheFile)
             case Some((analysis, compileSetup)) => {
-              val multiRebasingMapper = createMultiRebasingMapper(rebase)
-              val newAnalysis = rebaseAnalysis(analysis, multiRebasingMapper)
-              val newSetup = rebaseSetup(compileSetup, multiRebasingMapper)
+              implicit val fileMapper: Mapper[File] = createMultiRebasingFileMapper(rebase)
+              implicit val urlMapper: Mapper[URL] = createURLMapper(fileMapper)
+              val newAnalysis = rebaseAnalysis(analysis)
+              val newSetup = rebaseSetup(compileSetup)
               analysisStore.set(newAnalysis, newSetup)
               if (mirrorAnalysis) {
                 printRelations(newAnalysis, Some(new File(cacheFile.getPath() + ".relations")), cwd)
@@ -88,6 +90,9 @@ object SbtAnalysis {
     }
   }
 
+  trait Mapper[T] {
+    def apply(u: T): Option[T]
+  }
 
   /**
    * Create a mapper function that performs multiple rebases. For a given file, it uses the first rebase
@@ -100,8 +105,7 @@ object SbtAnalysis {
    * Note that this doesn't need to do general-purpose relative rebasing for paths with ../ etc. So it
    * uses a naive prefix-matching algorithm.
    */
-
-  def createMultiRebasingMapper(rebase: Map[File, File]): File => Option[File] = {
+  def createMultiRebasingFileMapper(rebase: Map[File, File]): Mapper[File] = {
     def createSingleRebaser(fromBase: String, toBase: Option[String]): PartialFunction[String, Option[String]] = {
       case path if path.startsWith(fromBase) => { toBase.map(_ + path.substring(fromBase.length)) }
     }
@@ -113,62 +117,96 @@ object SbtAnalysis {
 
     val multiRebaser: PartialFunction[String, Option[String]] =
       rebasers reduceLeft (_ orElse _) orElse { case s: String => Some(s) }
-    f: File => multiRebaser(f.getAbsolutePath) map { new File(_) }
+
+    new Mapper[File] {
+      def apply(f: File) =
+        multiRebaser(f.getAbsolutePath) map { new File(_) }
+    }
   }
+
+  def createURLMapper(mapper: Mapper[File]): Mapper[URL] = new Mapper[URL] {
+    def apply(u: URL) = mapURLFile(u)(mapper.apply)
+  }
+
+  /** FIXME: XXX: tests. */
+  def mapURLFile(u: URL)(f: File=>Option[File]): Option[URL] =
+    u.getProtocol match {
+      case "jar" =>
+        // rebase only the jar portion
+        val Array(jarFile, content) = u.getFile.split("!/", 2)
+        f(new File(u.getFile)).map { mappedFile =>
+          new URL("jar:file:" + mappedFile + "!/" + content)
+        }
+      case "file" =>
+        f(new File(u.getFile)).map(_.toURI.toURL)
+    }
 
   /**
    * Rebase all paths in an analysis.
    */
-  def rebaseAnalysis(analysis: Analysis, mapper: File => Option[File]): Analysis = {
-    analysis.copy(rebaseStamps(analysis.stamps, mapper), rebaseAPIs(analysis.apis, mapper),
-      rebaseRelations(analysis.relations, mapper), rebaseInfos(analysis.infos, mapper))
+  def rebaseAnalysis(analysis: Analysis)(implicit fmapper: Mapper[File], umapper: Mapper[URL]): Analysis = {
+    analysis.copy(rebaseStamps(analysis.stamps), rebaseAPIs(analysis.apis),
+      rebaseRelations(analysis.relations), rebaseInfos(analysis.infos))
   }
 
-  def rebaseStamps(stamps: Stamps, mapper: File => Option[File]): Stamps = {
-    def rebase[A](fileMap: Map[File, A]) = rebaseFileMap(fileMap, mapper)
-    Stamps(rebase(stamps.products), rebase(stamps.sources), rebase(stamps.binaries), rebase(stamps.classNames))
+  def rebaseStamps(stamps: Stamps)(implicit fmapper: Mapper[File], umapper: Mapper[URL]): Stamps = {
+    Stamps(
+      rebaseMap(stamps.products),
+      rebaseMap(stamps.sources),
+      rebaseMap(stamps.binaries),
+      rebaseMap(stamps.classNames)
+    )
   }
 
-  def rebaseAPIs(apis: APIs, mapper: File => Option[File]): APIs = {
-    APIs(rebaseFileMap(apis.internal, mapper), apis.external)
+  def rebaseAPIs(apis: APIs)(implicit mapper: Mapper[File]): APIs = {
+    APIs(rebaseMap(apis.internal), apis.external)
   }
 
-  def rebaseRelations(relations: Relations, mapper: File => Option[File]): Relations = {
-    def rebase(rel: Relation[File, File]) = rebaseRelation(rel, mapper)
-    def rebaseExt(rel: Relation[File, String]) = rebaseExtRelation(rel, mapper)
-    Relations.make(rebase(relations.srcProd), rebase(relations.binaryDep),
-      Relations.makeSource(rebase(relations.direct.internal), rebaseExt(relations.direct.external)),
-      Relations.makeSource(rebase(relations.publicInherited.internal), rebaseExt(relations.publicInherited.external)),
-      rebaseExt(relations.classes))
+  def rebaseRelations(relations: Relations)(implicit fmapper: Mapper[File], umapper: Mapper[URL]): Relations = {
+    Relations.make(
+      rebaseRelation(relations.srcProd),
+      rebaseRelation(relations.binaryDep),
+      Relations.makeSource(
+        rebaseRelation(relations.direct.internal),
+        rebaseExtRelation(relations.direct.external)
+      ),
+      Relations.makeSource(
+        rebaseRelation(relations.publicInherited.internal),
+        rebaseExtRelation(relations.publicInherited.external)
+      ),
+      rebaseExtRelation(relations.classes)
+    )
   }
 
-  def rebaseInfos(infos: SourceInfos, mapper: File => Option[File]): SourceInfos = {
-    SourceInfos.make(rebaseFileMap(infos.allInfos, mapper))
+  def rebaseInfos(infos: SourceInfos)(implicit mapper: Mapper[File]): SourceInfos = {
+    SourceInfos.make(rebaseMap(infos.allInfos))
   }
 
-  def rebaseRelation(relation: Relation[File, File], mapper: File => Option[File]): Relation[File, File] = {
-    def rebase(fileMap: Map[File, Set[File]]) = rebaseFileSetMap(rebaseFileMap(fileMap, mapper), mapper)
+  def rebaseRelation[K:Mapper, V:Mapper](relation: Relation[K, V]): Relation[K, V] = {
+    def rebase[K:Mapper,V:Mapper](map: Map[K, Set[V]]) = rebaseSetMap(rebaseMap(map))
     Relation.make(rebase(relation.forwardMap), rebase(relation.reverseMap))
   }
 
-  def rebaseExtRelation(relation: Relation[File, String], mapper: File => Option[File]): Relation[File, String] = {
-    Relation.make(rebaseFileMap(relation.forwardMap, mapper), rebaseFileSetMap(relation.reverseMap, mapper))
+  def rebaseExtRelation[K:Mapper](relation: Relation[K, String]): Relation[K, String] = {
+    Relation.make(rebaseMap(relation.forwardMap), rebaseSetMap(relation.reverseMap))
   }
 
-  def rebaseFileMap[A](fileMap: Map[File, A], mapper: File => Option[File]): Map[File, A] = {
-    fileMap flatMap { case (f, a) => mapper(f) map { (_, a) } }
+  def rebaseMap[T:Mapper,A](map: Map[T, A]): Map[T, A] = {
+    val mapper = implicitly[Mapper[T]]
+    map flatMap { case (f, a) => mapper(f) map { (_, a) } }
   }
 
-  def rebaseFileSetMap[A](fileSetMap: Map[A, Set[File]], mapper: File => Option[File]): Map[A, Set[File]] = {
+  def rebaseSetMap[A,T:Mapper](fileSetMap: Map[A, Set[T]]): Map[A, Set[T]] = {
+    val mapper = implicitly[Mapper[T]]
     fileSetMap mapValues { _ flatMap { f => mapper(f) } }
   }
 
   /**
    * Rebase the output directory of a compile setup.
    */
-  def rebaseSetup(setup: CompileSetup, mapper: File => Option[File]): CompileSetup = {
+  def rebaseSetup(setup: CompileSetup)(implicit mapper: Mapper[File]): CompileSetup = {
     val output = Some(setup.output) collect { case single: SingleOutput => single.outputLocation }
-    output flatMap mapper map { dir => new CompileSetup(CompileOutput(dir), setup.options, setup.compilerVersion, setup.order, setup.nameHashing) } getOrElse setup
+    output flatMap mapper.apply map { dir => new CompileSetup(CompileOutput(dir), setup.options, setup.compilerVersion, setup.order, setup.nameHashing) } getOrElse setup
   }
 
   /**
@@ -273,11 +311,15 @@ object SbtAnalysis {
   def printProducts(analysis: Analysis, output: Option[File], classesDirectory: File): Unit = {
     for (file <- output) {
       Using.fileWriter(utf8)(file) { out =>
-        def relative(path: File) = Util.relativize(classesDirectory, path)
+        def relativeFile(path: File): String = Util.relativize(classesDirectory, path)
+        def relativeURL(u: URL): String =
+          mapURLFile(u) { f =>
+            Some(new File(relativeFile(f)))
+          }.get.toString
         import analysis.relations.srcProd
         srcProd._1s.toSeq.sorted foreach {  k =>
-          srcProd.forward(k).toSeq.sorted foreach { v =>
-            out.write(relative(k)); out.write(" -> "); out.write(relative(v)); out.write("\n")
+          srcProd.forward(k).toSeq.sortBy(_.toString) foreach { v =>
+            out.write(relativeFile(k)); out.write(" -> "); out.write(relativeURL(v)); out.write("\n")
           }
         }
       }
