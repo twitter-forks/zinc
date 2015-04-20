@@ -8,7 +8,7 @@ import sbt.Logger
  * does not implement the capability to cancel compilations via the `advance` method.
  */
 class SimpleCompileProgress (logPhases: Boolean, logProgress: Boolean)(log: Logger) extends CompileProgress {
-  @volatile private var lastCurrent: Int = 0
+  @volatile private var lastStep: Int = 0
 
   /** 
    * startUnit Optionally reports to stdout when a phase of compilation has begun for a file.
@@ -29,9 +29,9 @@ class SimpleCompileProgress (logPhases: Boolean, logProgress: Boolean)(log: Logg
    */
   def advance(current: Int, total: Int): Boolean = {
     if (logProgress) {
-      if (current > lastCurrent) {
+      if (current > lastStep) {
         log.info("Progress: [" + current + "/" + total + "]")
-        lastCurrent = current
+        lastStep = current
       }
     }
     true
