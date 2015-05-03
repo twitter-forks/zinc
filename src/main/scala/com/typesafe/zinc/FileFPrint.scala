@@ -4,8 +4,9 @@
 
 package com.typesafe.zinc
 
-import java.io.{FileNotFoundException, FileInputStream, InputStream, File}
-import java.security.MessageDigest
+import java.io.{FileNotFoundException, File}
+import com.google.common.hash.Hashing
+import com.google.common.base.Charsets
 
 
 class FileFPrint(val file: File, val fprint: String) {
@@ -20,20 +21,21 @@ class FileFPrint(val file: File, val fprint: String) {
 }
 
 object FileFPrint {
+  private val HashFunction = Hashing.murmur3_128()
+  private val LongStringLen (2l^31).toString.size
+
   def fprint(file: File): Option[FileFPrint] = {
-    var is: Option[InputStream] = None
-    val md = MessageDigest.getInstance("SHA1")
-    val buf = new Array[Byte](8192)
-    var n = 0
     try {
-      is = Some(new FileInputStream(file))
-      while ({n = (is map {_.read(buf)}).getOrElse(-1); n != -1}) { md.update(buf, 0, n) }
-      val ret = Some(md.digest().map("%02X" format _).mkString)
-      ret map { new FileFPrint(file, _) }
+      if (!file.exists()) {
+        return None
+      }
+      val filePath = file.getCanonicalPath()
+      val hasher = HashFunction.newHasher(2 * (LongStringLen + filePath.size))
+      hasher.putString(filePath, Charsets.UTF_8)
+      hasher.putLong(file.lastModified)
+      Some(FileFPrint(file, hasher.hash.toString))
     } catch {
       case e: FileNotFoundException => None
-    } finally {
-      is foreach { _.close }
     }
   }
 }
