@@ -12,7 +12,7 @@ object ZincBuild extends Build {
 
   lazy val buildSettings = Seq(
     organization := "com.typesafe.zinc",
-    version := "0.3.7-stuhood-no-analysis-hash-1",
+    version := "0.3.7-stuhood-no-analysis-hash-3",
     scalaVersion := "2.10.4",
     crossPaths := false
   )
@@ -24,6 +24,8 @@ object ZincBuild extends Build {
       resolveSbtLocally := false,
       resolvers += (if (resolveSbtLocally.value) Resolver.mavenLocal else Opts.resolver.sonatypeSnapshots),
       libraryDependencies ++= Seq(
+        // TODO: guava is a relatively heavy dep
+        "com.google.guava" % "guava" % "16.0.1",
         "com.typesafe.sbt" % "incremental-compiler" % sbtVersion,
         "com.typesafe.sbt" % "compiler-interface" % sbtVersion classifier "sources",
         "com.martiansoftware" % "nailgun-server" % "0.9.1" % "optional"

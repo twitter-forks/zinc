@@ -22,7 +22,7 @@ class FileFPrint(val file: File, val fprint: String) {
 
 object FileFPrint {
   private val HashFunction = Hashing.murmur3_128()
-  private val LongStringLen (2l^31).toString.size
+  private val LongStringLen = (2l^31).toString.size
 
   def fprint(file: File): Option[FileFPrint] = {
     try {
@@ -33,7 +33,7 @@ object FileFPrint {
       val hasher = HashFunction.newHasher(2 * (LongStringLen + filePath.size))
       hasher.putString(filePath, Charsets.UTF_8)
       hasher.putLong(file.lastModified)
-      Some(FileFPrint(file, hasher.hash.toString))
+      Some(new FileFPrint(file, hasher.hash.toString))
     } catch {
       case e: FileNotFoundException => None
     }

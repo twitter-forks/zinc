@@ -36,9 +36,10 @@ object Inputs {
   /**
    * Create inputs based on command-line settings.
    */
-  def apply(settings: Settings): Inputs = {
+  def apply(log: sbt.Logger, settings: Settings): Inputs = {
     import settings._
     inputs(
+      log,
       classpath,
       sources,
       classesDirectory,
@@ -55,10 +56,20 @@ object Inputs {
       analysis.mirrorAnalysis)
   }
 
+  /** An overridden definesClass to use analysis for an input directory if it is available. */
+  def definesClass(log: sbt.Logger, analysisMap: Map[File, Analysis], entry: File): String => Boolean =
+    analysisMap.get(entry).map { analysis =>
+      log.debug(s"Hit analysis cache for ${entry}")
+      (s: String) => analysis.relations.definesClass(s).nonEmpty
+    }.getOrElse {
+      Locate.definesClass(entry)
+    }
+
   /**
    * Create normalised and defaulted Inputs.
    */
   def inputs(
+    log: sbt.Logger,
     classpath: Seq[File],
     sources: Seq[File],
     classesDirectory: File,
@@ -85,7 +96,7 @@ object Inputs {
     val printRelations   = outputRelations map normalise
     val printProducts    = outputProducts map normalise
     new Inputs(
-      cp, srcs, classes, scalacOptions, javacOptions, cacheFile, analysisMap, forceClean, Locate.definesClass,
+      cp, srcs, classes, scalacOptions, javacOptions, cacheFile, analysisMap, forceClean, definesClass(log, analysisMap, _),
       javaOnly, compileOrder, incOpts, printRelations, printProducts, mirrorAnalysis
     )
   }
@@ -94,6 +105,7 @@ object Inputs {
    * Java API for creating Inputs.
    */
   def create(
+    log: sbt.Logger,
     classpath: JList[File],
     sources: JList[File],
     classesDirectory: File,
@@ -105,6 +117,7 @@ object Inputs {
     incOptions: IncOptions,
     mirrorAnalysisCache: Boolean): Inputs =
   inputs(
+    log,
     classpath.asScala,
     sources.asScala,
     classesDirectory,
@@ -123,6 +136,7 @@ object Inputs {
 
   @deprecated("Use the variant that takes `incOptions` parameter, instead.", "0.3.5.3")
   def create(
+    log: sbt.Logger,
     classpath: JList[File],
     sources: JList[File],
     classesDirectory: File,
@@ -132,7 +146,7 @@ object Inputs {
     analysisMap: JMap[File, File],
     compileOrder: String,
     mirrorAnalysisCache: Boolean): Inputs =
-    create(classpath, sources, classesDirectory, scalacOptions, javacOptions,
+    create(log, classpath, sources, classesDirectory, scalacOptions, javacOptions,
       analysisCache, analysisMap, compileOrder, IncOptions(), mirrorAnalysisCache)
 
   /**
