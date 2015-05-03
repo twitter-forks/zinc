@@ -91,12 +91,26 @@ object Inputs {
     val classes          = normalise(classesDirectory)
     val cacheFile        = normalise(analysisCache.getOrElse(defaultCacheLocation(classesDirectory)))
     val upstreamAnalysis = analysisCacheMap map { case (k, v) => (normalise(k), normalise(v)) }
-    val analysisMap      = (cp map { file => (file, analysisFor(file, classes, upstreamAnalysis)) }).toMap
+    // Use only existing upstream analysis files for class lookups.
+    val validUpstreamAnalysis =
+      upstreamAnalysis.flatMap {
+        case (k, v) =>
+          if (k == classes) {
+            // ignore our own analysis
+            None
+          } else {
+            // use analysis only if it was valid/non-empty
+            Compiler.analysisOption(v).map { analysis =>
+              k -> analysis
+            }
+          }
+      }
+    val analysisMap      = (cp map { file => (file, allAnalysisFor(file, classes, upstreamAnalysis)) }).toMap
     val incOpts          = updateIncOptions(incOptions, classesDirectory, normalise)
     val printRelations   = outputRelations map normalise
     val printProducts    = outputProducts map normalise
     new Inputs(
-      cp, srcs, classes, scalacOptions, javacOptions, cacheFile, analysisMap, forceClean, definesClass(log, analysisMap, _),
+      cp, srcs, classes, scalacOptions, javacOptions, cacheFile, analysisMap, forceClean, definesClass(log, validUpstreamAnalysis, _),
       javaOnly, compileOrder, incOpts, printRelations, printProducts, mirrorAnalysis
     )
   }
@@ -168,9 +182,9 @@ object Inputs {
 
   /**
    * Get the analysis for a compile run, based on a classpath entry.
-   * If not cached in memory, reads from the cache file.
+   * If not cached in memory, reads from the cache file, or creates empty analysis.
    */
-  def analysisFor(file: File, exclude: File, mapped: Map[File, File]): Analysis = {
+  def allAnalysisFor(file: File, exclude: File, mapped: Map[File, File]): Analysis = {
     cacheFor(file, exclude, mapped) map Compiler.analysis getOrElse Analysis.Empty
   }
 
